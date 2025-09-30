@@ -171,7 +171,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
         }
 
         // Gọi lại để nhận frame tiếp theo
-        HAL_UART_Receive_IT(&huart2, rxBuffer, 64);
+        HAL_UART_Receive_IT(&huart2, rxBuffer, 32);
     }
 }
 /* USER CODE END 4 */
