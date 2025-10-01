@@ -36,6 +36,7 @@ uint8_t rxBuffer[32];
 uint16_t pm1_0, pm2_5, pm10;
 volatile uint8_t pms_new_data = 0;
 char pms_msg[64];
+char TxBuffer[100];
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -89,7 +90,9 @@ int main(void)
 
   FR_Status = f_mount(&FatFs, "", 1);
     if (FR_Status != FR_OK) {
-        Error_Handler();
+    	sprintf(TxBuffer, "Error! While Mounting SD Card, Error Code: (%i)\r\n", FR_Status);
+    	HAL_UART_Transmit(&huart1, (uint8_t *) TxBuffer, strlen(TxBuffer), 100);
+return 0;
     }
     HAL_UART_Receive_IT(&huart2, rxBuffer, 32);
   while(1)
