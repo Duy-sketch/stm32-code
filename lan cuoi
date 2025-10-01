@@ -30,9 +30,12 @@
 #include <string.h>
 FATFS FatFs;
 FIL Fil;
-UINT a;
+UINT bw;
 FRESULT FR_Status;
-char TxBuffer[250];
+uint8_t rxBuffer[32];
+uint16_t pm1_0, pm2_5, pm10;
+volatile uint8_t pms_new_data = 0;
+char pms_msg[64];
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -53,8 +56,6 @@ char TxBuffer[250];
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-uint8_t  rxBuffer[32];       // buffer nhận khung PMS7003
-uint16_t pm1_0, pm2_5, pm10; // giá trị đọc được
 
 /* USER CODE END PV */
 
@@ -62,10 +63,7 @@ uint16_t pm1_0, pm2_5, pm10; // giá trị đọc được
 void SystemClock_Config(void);
 
 
-static void UART_Print(char* str)
-{
-    HAL_UART_Transmit(&huart1, (uint8_t *) str, strlen(str), 100);
-}
+
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -88,32 +86,33 @@ int main(void)
   MX_USART2_UART_Init();
   MX_USART1_UART_Init();
   MX_FATFS_Init();
-  HAL_UART_Receive_IT(&huart2, rxBuffer, 32);
-
 
   FR_Status = f_mount(&FatFs, "", 1);
-  if (FR_Status != FR_OK) {
-      sprintf(TxBuffer, "Error mounting SD card, code: %d\r\n", FR_Status);
-      UART_Print(TxBuffer);
-  } else {
-      sprintf(TxBuffer, "SD card mounted successfully!\r\n");
-      UART_Print(TxBuffer);
-
-      FR_Status = f_open(&Fil, "duy.txt", FA_CREATE_ALWAYS | FA_WRITE);
-      if (FR_Status != FR_OK) {
-          sprintf(TxBuffer, "Error opening file, code: %d\r\n", FR_Status);
-          UART_Print(TxBuffer);
-      } else {
-          f_write(&Fil, "Hello SD!\r\n", 10, &a);
-          f_close(&Fil);
-          UART_Print("File written and closed.\r\n");
-      }
-  }
+    if (FR_Status != FR_OK) {
+        Error_Handler();
+    }
+    HAL_UART_Receive_IT(&huart2, rxBuffer, 32);
   while(1)
   {
-	  HAL_Delay(1000);
+	  if (pms_new_data) {
+	            pms_new_data = 0;
+
+	            /* Mở file (chỉ dùng WRITE) */
+	            FR_Status = f_open(&Fil, "duy.txt", FA_WRITE | FA_READ | FA_CREATE_ALWAYS);
+	            if (FR_Status == FR_OK) {
+	                /* Nhảy về cuối file */
+	                f_lseek(&Fil, f_size(&Fil));
+
+	                /* Ghi dữ liệu */
+	                f_write(&Fil, pms_msg, strlen(pms_msg), &bw);
+
+	                /* Đóng file */
+	                f_close(&Fil);
+	            }
+	        }
+	    }
   }
-}
+
 void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
@@ -152,20 +151,16 @@ void SystemClock_Config(void)
 /* USER CODE BEGIN 4 */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-    if (huart->Instance == USART2) // Nếu nhận từ PMS7003
-    {
-        if (rxBuffer[0] == 0x42 && rxBuffer[1] == 0x4D) // Header PMS
-        {
+    if (huart->Instance == USART2) {
+        if (rxBuffer[0] == 0x42 && rxBuffer[1] == 0x4D) {
             pm1_0 = (rxBuffer[10] << 8) | rxBuffer[11];
             pm2_5 = (rxBuffer[12] << 8) | rxBuffer[13];
             pm10  = (rxBuffer[14] << 8) | rxBuffer[15];
 
-            char msg[64];
-            sprintf(msg, "PM1.0=%u, PM2.5=%u, PM10=%u\r\n", pm1_0, pm2_5, pm10);
-            UART_Print(msg);
+            sprintf(pms_msg, "PM1.0=%u, PM2.5=%u, PM10=%u\r\n", pm1_0, pm2_5, pm10);
+            pms_new_data = 1;
         }
-
-        // Gọi lại để nhận frame tiếp theo
+        /* Nhận frame tiếp */
         HAL_UART_Receive_IT(&huart2, rxBuffer, 32);
     }
 }
